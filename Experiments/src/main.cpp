@@ -16,5 +16,8 @@ int main()
     printf("Element at %d is %s\n", 123, a[123]);
     printf("Element at %d is %s\n", 355, a[355]);
 
+    auto pc = PopCount64((uint64)-1);
+    printf("PopCount -1: %ld", pc);
+
     return 0;
 }

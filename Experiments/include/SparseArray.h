@@ -1,6 +1,7 @@
 #include <inttypes.h>
 #include <cstdlib>
 #include <cstring>
+#include <cassert>
 
 using uint8 = uint8_t;
 using uint = uint32_t;
@@ -40,11 +41,12 @@ bitMap          bitSum      elements
 */
 
 //-----------------------------------------------------------------------------
-//template<class T>
+// TODO Add iterators
+template<class Item_t>
 class SparseArray
 {
 public:
-    using Item_t = const char*;
+    //using Item_t = const char*;
     using BitSum_t = uint8;
     using BitField_t = uint64;
 
@@ -71,7 +73,7 @@ public:
     }
 
     //-----------------------------------------------------------------------------
-    Item_t operator[](uint idx)
+    Item_t& operator[](uint idx)
     {
         uint iMain = idx >> 6;
         uint iBits = idx & 63;
@@ -79,8 +81,7 @@ public:
         BitField_t bitfield = bitFields_[iMain];
 
         BitField_t mask = ((BitField_t)1 << iBits);
-        if ((bitfield & mask) == 0)
-            return nullptr;
+        assert((bitfield & mask) != 0);
 
         uint offset = bitSums_[iMain];
         mask = mask - 1;
@@ -90,7 +91,7 @@ public:
     }
 
     //-----------------------------------------------------------------------------
-    void Insert(uint idx, Item_t newItem)
+    bool Insert(uint idx, Item_t newItem)
     {
         uint iMain = idx >> 6;
         uint iBits = idx & 63;
@@ -103,7 +104,7 @@ public:
 
         // Already present
         if ((*bitfield & mask) != 0)
-            return;
+            return false;
         
         if (count_ + 1 > capacity_)
         {
@@ -126,8 +127,43 @@ public:
         // Shift all items
         for (uint i = count_ - 1; i > iItem; --i)
             items_[i] = items_[i - 1];
-    
+
         items_[iItem] = newItem;
+
+        return true;
+    }
+
+    //-----------------------------------------------------------------------------
+    bool Remove(uint idx)
+    {
+        uint iMain = idx >> 6;
+        uint iBits = idx & 63;
+
+        BitField_t* bitfield = &bitFields_[iMain];
+
+        BitField_t mask = ((BitField_t)1 << iBits);
+        if ((*bitfield & mask) == 0)
+            return false;
+
+        --count_;
+
+        *bitfield &= ~mask; // Remove the element from the bitfield
+
+        for (uint i = iMain + 1; i < bitSumsCapacity_; ++i)
+            --bitSums_[i];
+
+        uint offset = bitSums_[iMain];
+        mask = mask - 1;
+        uint bitOffset = PopCount64((*bitfield) & mask);
+        uint iItem = offset + bitOffset;
+
+        // Shift all items
+        for (uint i = iItem; i < count_; ++i)
+            items_[i] = items_[i + 1];
+
+        //TODO call destructor for items_[count_];
+
+        return true;
     }
 
 private:

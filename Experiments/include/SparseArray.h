@@ -1,34 +1,12 @@
-#include <inttypes.h>
-#include <cstdlib>
+#pragma once
+
+#include "IntTypes.h"
+#include "Math.h"
+
+#include <stdlib.h>
 #include <cstring>
 #include <cassert>
 
-using uint8 = uint8_t;
-using uint = uint32_t;
-using uint64 = uint64_t;
-
-//-----------------------------------------------------------------------------
-uint PopCount(uint x)
-{
-    x = x - ((x >> 1) & 0x55555555);
-    x = (x & 0x33333333) + ((x >> 2) & 0x33333333);
-    x = (x + (x >> 4)) & 0x0F0F0F0F;
-    x = x + (x >> 8);
-    x = x + (x >> 16);
-    return x & 0x0000003F;
-}
-
-//-----------------------------------------------------------------------------
-uint PopCount64(uint64 x)
-{
-    x = x - ((x >> 1) & 0x5555555555555555);
-    x = (x & 0x3333333333333333) + ((x >> 2) & 0x3333333333333333);
-    x = (x + (x >> 4)) & 0x0F0F0F0F0F0F0F0F;
-    x = x + (x >> 8);
-    x = x + (x >> 16);
-    x = x + (x >> 32);
-    return x & 0x0000007F;
-}
 
 /*
 bitMap          bitSum      elements
@@ -47,7 +25,7 @@ class SparseArray
 {
 public:
     //using Item_t = const char*;
-    using BitSum_t = uint8;
+    using BitSum_t = uint;
     using BitField_t = uint64;
 
     //-----------------------------------------------------------------------------

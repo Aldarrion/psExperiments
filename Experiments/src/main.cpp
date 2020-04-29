@@ -1,8 +1,8 @@
-#include <cstdio>
-
 #include "SparseArray.h"
 
-int main()
+#include <cstdio>
+
+void SparseArrayTest()
 {
     SparseArray<const char*> a;
 
@@ -56,6 +56,11 @@ int main()
 
     auto pc = PopCount64((uint64)-1);
     printf("PopCount -1: %ld", pc);
+}
+
+int main()
+{
+    SparseArrayTest();
 
     return 0;
 }

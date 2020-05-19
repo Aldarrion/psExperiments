@@ -1,5 +1,10 @@
 #include "SparseArray.h"
+#include "Array.h"
 
+#include "Heap.h"
+#include "SortedArray.h"
+
+#include <chrono>
 #include <cstdio>
 
 void SparseArrayTest()
@@ -58,9 +63,102 @@ void SparseArrayTest()
     printf("PopCount -1: %ld", pc);
 }
 
+void ArrayTest()
+{
+    Array<int> a;
+    int size = 33;
+    for (int i = 0; i < size; ++i)
+    {
+        a.Add(i);
+    }
+
+    printf("--- Array after add\n");
+    for (int i = 0; i < a.Count(); ++i)
+    {
+        printf("\tArr[%d] == %d\n", i, a[i]);
+    }
+
+    for (int i = (size - 1) / 2; i >= 0; --i)
+    {
+        a.Remove(i * 2);
+    }
+
+    printf("--- Array after remove\n");
+    for (int i = 0; i < a.Count(); ++i)
+    {
+        printf("\tArr[%d] == %d\n", i, a[i]);
+    }
+
+    a.Insert(a.Count(), 999);
+    a.Insert(0, -123);
+    a.Insert(3, 333);
+
+    printf("--- Array after insert\n");
+    for (int i = 0; i < a.Count(); ++i)
+    {
+        printf("\tArr[%d] == %d\n", i, a[i]);
+    }
+}
+
+void HeapVsSortedArrayBench()
+{
+    constexpr int ITER = 1'00'000;
+
+    {
+        int checksum = 0;
+        SortedArray sa;
+        srand(42);
+
+        auto start = std::chrono::high_resolution_clock::now();
+        for (int i = 0; i < ITER; ++i)
+        {
+            bool remove = (rand() % 3) == 0;
+            if (sa.Count() && remove)
+            {
+                checksum += sa.RemoveMin();
+            }
+            else
+            {
+                sa.Add(rand());
+            }
+        }
+        auto end = std::chrono::high_resolution_clock::now();
+        auto elapsed = (end - start).count() / (1000.0f * 1000 * 1000);
+
+        printf("SortedArray chsm: %d, elapsed: %f seconds\n", checksum, elapsed);
+    }
+
+    {
+        int checksum = 0;
+        Heap sa;
+        srand(42);
+
+        auto start = std::chrono::high_resolution_clock::now();
+        for (int i = 0; i < ITER; ++i)
+        {
+            bool remove = (rand() % 3) == 0;
+            if (sa.Count() && remove)
+            {
+                checksum += sa.RemoveMin();
+            }
+            else
+            {
+                sa.Add(rand());
+            }
+        }
+        auto end = std::chrono::high_resolution_clock::now();
+        auto elapsed = (end - start).count() / (1000.0f * 1000 * 1000);
+
+        printf("SortedArray chsm: %d, elapsed: %f seconds\n", checksum, elapsed);
+    }
+}
+
 int main()
 {
-    SparseArrayTest();
+    //SparseArrayTest();
+    //ArrayTest();
+
+    HeapVsSortedArrayBench();
 
     return 0;
 }

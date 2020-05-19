@@ -1,7 +1,7 @@
 #pragma once
 
-#include "IntTypes.h"
-#include "Math.h"
+#include "Types.h"
+#include "ps_Math.h"
 
 #include <stdlib.h>
 #include <cstring>

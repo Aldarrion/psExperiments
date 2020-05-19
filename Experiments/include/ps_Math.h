@@ -1,6 +1,6 @@
 #pragma once
 
-#include "IntTypes.h"
+#include "Types.h"
 
 //-----------------------------------------------------------------------------
 inline uint PopCount(uint x)
@@ -23,4 +23,12 @@ inline uint PopCount64(uint64 x)
     x = x + (x >> 16);
     x = x + (x >> 32);
     return x & 0x0000007F;
+}
+
+
+//------------------------------------------------------------------------------
+template<class T>
+T Max(T a, T b)
+{
+    return a > b ? a : b;
 }

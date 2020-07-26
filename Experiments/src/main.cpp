@@ -4,6 +4,14 @@
 #include "Heap.h"
 #include "SortedArray.h"
 
+#include "Voronoi.h"
+
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb/stb_image.h"
+
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb/stb_image_write.h"
+
 #include <chrono>
 #include <cstdio>
 
@@ -153,12 +161,27 @@ void HeapVsSortedArrayBench()
     }
 }
 
+void VoronoiTest()
+{
+    constexpr uint seedCount = 5;
+    SeedPoint seeds[seedCount];
+    seeds[0] = SeedPoint{ 100, 100, 0xffff0000 };
+    seeds[1] = SeedPoint{ 800, 800, 0xff00ff00 };
+    seeds[2] = SeedPoint{ 456, 120, 0xff0000ff };
+    seeds[3] = SeedPoint{ 500, 500, 0xff00ffff };
+    seeds[4] = SeedPoint{ 100, 700, 0xffff00ff };
+
+    GenerateVoronoi(seeds, seedCount, 1024, 1024);
+}
+
 int main()
 {
     //SparseArrayTest();
     //ArrayTest();
     
-    HeapVsSortedArrayBench();
+    //HeapVsSortedArrayBench();
+
+    VoronoiTest();
 
     return 0;
 }

@@ -17,9 +17,74 @@ public:
     //------------------------------------------------------------------------------
     ~Array()
     {
-        capacity_ = 0;
+        for (int i = 0; i < count_; ++i)
+            items_[i].~T();
         count_ = 0;
-        delete[] items_;
+
+        capacity_ = 0;
+        free(items_);
+    }
+
+    //------------------------------------------------------------------------------
+    Array(const Array<T>& other)
+    {
+        capacity_ = other.capacity_;
+        count_ = other.count_;
+
+        items_ = (T*)malloc(sizeof(T) * capacity_);
+        for (int i = 0; i < count_; ++i)
+        {
+            items_[i] = other.items_[i];
+        }
+    }
+
+    //------------------------------------------------------------------------------
+    Array<T>& operator=(const Array<T>& other)
+    {
+        for (int i = 0; i < count_; ++i)
+            items_[i].~T();
+        free(items_);
+
+        capacity_ = other.capacity_;
+        count_ = other.count_;
+
+        items_ = (T*)malloc(sizeof(T) * capacity_);
+        for (int i = 0; i < count_; ++i)
+        {
+            items_[i] = other.items_[i];
+        }
+
+        return *this;
+    }
+
+    //------------------------------------------------------------------------------
+    Array(Array<T>&& other)
+    {
+        capacity_ = other.capacity_;
+        count_ = other.count_;
+        items_ = other.items_;
+        
+        other.items_ = nullptr;
+        other.capacity_ = 0;
+        other.count_ = 0;
+    }
+
+    //------------------------------------------------------------------------------
+    Array<T>& operator=(Array<T>&& other)
+    {
+        for (int i = 0; i < count_; ++i)
+            items_[i].~T();
+        free(items_);
+
+        capacity_ = other.capacity_;
+        count_ = other.count_;
+        items_ = other.items_;
+        
+        other.items_ = nullptr;
+        other.capacity_ = 0;
+        other.count_ = 0;
+
+        return *this;
     }
 
     //------------------------------------------------------------------------------
@@ -56,7 +121,8 @@ public:
             items_ = newItems;
         }
 
-        items_[count_++] = item;
+        new(items_ + count_) T(item);
+        ++count_;
     }
 
     //------------------------------------------------------------------------------
@@ -82,8 +148,8 @@ public:
             memmove(&items_[index + 1], &items_[index], (count_ - index) * sizeof(T));
         }
 
+        new(items_ + index) T(item);
         ++count_;
-        items_[index] = item;
     }
 
     //------------------------------------------------------------------------------

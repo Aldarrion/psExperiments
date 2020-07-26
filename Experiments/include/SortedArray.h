@@ -20,7 +20,7 @@ public:
     {
         // Find insert spot
         int bot = 0;
-        int top = values_.Count() - 1;
+        int top = (int)values_.Count() - 1;
         int idx = (top - bot) / 2;
 
         while (top > bot)
@@ -33,7 +33,7 @@ public:
             {
                 top = idx - 1;
             }
-            idx = bot + std::ceil((top - bot) / 2);
+            idx = bot + (int)std::ceil((top - bot) / 2);
         }
 
         if (idx < values_.Count() && x > values_[idx])

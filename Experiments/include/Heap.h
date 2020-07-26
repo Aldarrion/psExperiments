@@ -28,11 +28,11 @@ public:
     {
         values_.Add(x);
 
-        int idx = values_.Count() - 1;
+        size_t idx = values_.Count() - 1;
 
         while (idx != 0)
         {
-            int parent = 0;
+            size_t parent = 0;
             if (idx & 1)
                 parent = (idx - 1) / 2;
             else
@@ -59,7 +59,7 @@ public:
         values_[0] = values_.Last();
         values_.Remove(values_.Count() - 1);
 
-        uint count = values_.Count();
+        size_t count = values_.Count();
 
         int idx = 0;
         while (true)

@@ -171,7 +171,11 @@ void VoronoiTest()
     seeds[3] = SeedPoint{ 500, 500, 0xff00ffff };
     seeds[4] = SeedPoint{ 100, 700, 0xffff00ff };
 
-    GenerateVoronoi(seeds, seedCount, 1024, 1024);
+    const char* naiveFile = "c:/tmp/voronoiNaive.png";
+    const char* jffFile = "c:/tmp/voronoiJFF.png";
+
+    GenerateVoronoi(naiveFile, seeds, seedCount, 1024, 1024, &VoronoiNaive);
+    GenerateVoronoi(jffFile, seeds, seedCount, 1024, 1024, &VoronoiJumpFloodFill);
 }
 
 int main()

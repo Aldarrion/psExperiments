@@ -5,14 +5,21 @@
 
 #include <cassert>
 
+#define hs_assert(x) assert(x)
 
+namespace hs
+{
 //------------------------------------------------------------------------------
 template<class T>
 class Array
 {
 public:
     //------------------------------------------------------------------------------
-    Array() = default;
+    Array()
+        : capacity_(0)
+        , count_(0)
+        , items_(nullptr)
+    {}
 
     //------------------------------------------------------------------------------
     ~Array()
@@ -88,84 +95,188 @@ public:
     }
 
     //------------------------------------------------------------------------------
-    size_t Count() const
+    uint64 Count() const
     {
         return count_;
     }
 
     //------------------------------------------------------------------------------
-    const T& operator[](size_t index) const
+    bool IsEmpty() const
     {
-        assert(index < count_);
+        return count_ == 0;
+    }
+
+    //------------------------------------------------------------------------------
+    const T& operator[](uint64 index) const
+    {
+        hs_assert(index < count_);
         return items_[index];
     }
 
     //------------------------------------------------------------------------------
-    T& operator[](size_t index)
+    T& operator[](uint64 index)
     {
-        assert(index < count_);
+        hs_assert(index < count_);
         return items_[index];
+    }
+
+    //------------------------------------------------------------------------------
+    template<class ...ArgsT>
+    void EmplaceBack(ArgsT ...args)
+    {
+        // Check for aliasing
+        if (count_ == capacity_)
+        {
+            capacity_ = ArrMax(capacity_ << 1, MIN_CAPACITY);
+            
+            T* newItems = (T*)malloc(sizeof(T) * capacity_);
+
+            if (std::is_trivial_v<T>)
+            {
+                memcpy(newItems, items_, sizeof(T) * count_);
+            }
+            else
+            {
+                for (int i = 0; i < count_; ++i)
+                {
+                    new(newItems + i) T(std::move(items_[i]));
+                    items_[i].~T();
+                }
+            }
+            free(items_);
+            items_ = newItems;
+        }
+
+        hs_assert(count_ < capacity_);
+
+        new(items_ + count_) T(std::forward<ArgsT>(args)...);
+        ++count_;
+    }
+
+    //------------------------------------------------------------------------------
+    template<class ...ArgsT>
+    void Emplace(uint64 index, ArgsT ...args)
+    {
+        hs_assert(index <= count_);
+        if (index == count_)
+        {
+            EmplaceBack(std::forward<ArgsT>(args)...);
+            return;
+        }
+
+        if (count_ == capacity_)
+        {
+            capacity_ = ArrMax(capacity_ << 1, MIN_CAPACITY);
+
+            auto newItems = (T*)malloc(sizeof(T) * capacity_);
+            if (std::is_trivial_v<T>)
+            {
+                memcpy(newItems, items_, sizeof(T) * index);
+                memcpy(&newItems[index + 1], &items_[index], (count_ - index) * sizeof(T));
+            }
+            else
+            {
+                for (int i = 0; i < index; ++i)
+                {
+                    new(newItems + i) T(std::move(items_[i]));
+                    items_[i].~T();
+                }
+                for (int i = index; i < count_; ++i)
+                {
+                    new(newItems + i + 1) T(std::move(items_[i]));
+                    items_[i].~T();
+                }
+            }
+
+            free(items_);
+            items_ = newItems;
+            new(items_ + index) T(std::forward<ArgsT>(args)...);
+        }
+        else
+        {
+            // Move items by one to the right
+            if (std::is_trivial_v<T>)
+            {
+                memmove(&items_[index + 1], &items_[index], (count_ - index) * sizeof(T));
+            }
+            else
+            {
+                // count_ is at least 1, otherwise there is early exit
+                // New last place is not initialized item, move construct there
+                new(items_ + count_) T(std::move(items_[count_ - 1]));
+                // Other items can be move assigned
+                for (T* item = items_ + count_- 1; item != items_ + index; --item)
+                    *item = std::move(*(item - 1));
+            }
+
+            items_[index] = T(std::forward<ArgsT>(args)...);
+        }
+
+        hs_assert(count_ < capacity_);
+        ++count_;
     }
 
     //------------------------------------------------------------------------------
     void Add(const T& item)
     {
-        if (count_ >= capacity_)
-        {
-            auto oldCapacity = capacity_;
-            capacity_ = Max(capacity_ << 1, MIN_CAPACITY);
-            
-            T* newItems = (T*)malloc(sizeof(T) * capacity_);
-            memcpy(newItems, items_, sizeof(T) * oldCapacity);
-            free(items_);
-            items_ = newItems;
-        }
-
-        new(items_ + count_) T(item);
-        ++count_;
+        // Check for aliasing
+        hs_assert((&item < items_ || &item >= items_ + capacity_) && "Inserting item from array to itself is not handled");
+        EmplaceBack(item);
     }
 
     //------------------------------------------------------------------------------
-    void Insert(size_t index, const T& item)
+    void Add(T&& item)
     {
-        assert(index <= count_);
+        // Check for aliasing
+        hs_assert((&item < items_ || &item >= items_ + capacity_) && "Inserting item from array to itself is not handled");
+        EmplaceBack(std::move(item));
+    }
 
-        if (count_ >= capacity_)
+    //------------------------------------------------------------------------------
+    void Insert(uint64 index, const T& item)
+    {
+        // Check for aliasing
+        hs_assert((&item < items_ || &item >= items_ + capacity_) && "Inserting item from array to itself is not handled");
+        Emplace(index, item);
+    }
+
+    //------------------------------------------------------------------------------
+    void Insert(uint64 index, T&& item)
+    {
+        // Check for aliasing
+        hs_assert((&item < items_ || &item >= items_ + capacity_) && "Inserting item from array to itself is not handled");
+        Emplace(index, std::move(item));
+    }
+
+    //------------------------------------------------------------------------------
+    void Remove(uint64 index)
+    {
+        hs_assert(index < count_);
+
+        if (std::is_trivial_v<T>)
         {
-            auto oldCapacity = capacity_;
-            capacity_ = Max(capacity_ << 1, MIN_CAPACITY);
-            
-            T* newItems = (T*)malloc(sizeof(T) * capacity_);
-            memcpy(newItems, items_, sizeof(T) * index);
-            memcpy(&newItems[index + 1], &items_[index], (oldCapacity - index) * sizeof(T));
-
-            free(items_);
-            items_ = newItems;
+            memmove(&items_[index], &items_[index + 1], (count_ - index) * sizeof(T));
         }
         else
         {
-            // Move items by one to the right
-            memmove(&items_[index + 1], &items_[index], (count_ - index) * sizeof(T));
+            for (T* item = items_ + index; item != items_ + count_ - 1; ++item)
+                *item = std::move(item[1]);
+            items_[count_ - 1].~T();
         }
 
-        new(items_ + index) T(item);
-        ++count_;
+        --count_;
     }
 
     //------------------------------------------------------------------------------
-    void Remove(size_t index)
+    void RemoveLast()
     {
-        assert(index < count_);
-        items_[index].~T();
-        
-        --count_;
-        memmove(&items_[index], &items_[index + 1], (count_ - index) * sizeof(T));
+        Remove(count_ - 1);
     }
 
     //------------------------------------------------------------------------------
     void Clear()
     {
-        for (size_t i = 0; i < count_; ++i)
+        for (uint64 i = 0; i < count_; ++i)
         {
             items_[i].~T();
         }
@@ -173,16 +284,79 @@ public:
     }
 
     //------------------------------------------------------------------------------
-    const T& Last()
+    void Reserve(uint64 capacity)
     {
-        assert(count_);
+        if (capacity <= capacity_)
+            return;
+
+        auto oldCapacity = capacity_;
+        capacity_ = ArrMax(capacity, MIN_CAPACITY);
+
+        T* newItems = (T*)malloc(sizeof(T) * capacity_);
+        if (std::is_trivial_v<T>)
+        {
+            memcpy(newItems, items_, sizeof(T) * oldCapacity);
+        }
+        else
+        {
+            for (int i = 0; i < count_; ++i)
+            {
+                new(newItems + i) T(std::move(items_[i]));
+                items_[i].~T();
+            }
+        }
+
+        free(items_);
+        items_ = newItems;
+    }
+
+    //------------------------------------------------------------------------------
+    const T& First() const
+    {
+        hs_assert(count_);
+        return items_[0];
+    }
+
+    //------------------------------------------------------------------------------
+    T& First()
+    {
+        hs_assert(count_);
+        return items_[0];
+    }
+
+    //------------------------------------------------------------------------------
+    const T& Last() const
+    {
+        hs_assert(count_);
         return items_[count_ - 1];
     }
 
-private:
-    static constexpr size_t MIN_CAPACITY = 8;
+    //------------------------------------------------------------------------------
+    T& Last()
+    {
+        hs_assert(count_);
+        return items_[count_ - 1];
+    }
 
-    size_t capacity_{};
-    size_t count_{};
-    T* items_{};
+    //------------------------------------------------------------------------------
+    T* Data() const
+    {
+        return items_;
+    }
+
+private:
+    static constexpr uint64 MIN_CAPACITY = 8;
+
+    uint64 capacity_;
+    uint64 count_;
+    T* items_;
+
+    //------------------------------------------------------------------------------
+    uint64 ArrMax(uint64 a, uint64 b)
+    {
+        return a > b ? a : b;
+    }
 };
+
+}
+

@@ -6,6 +6,8 @@
 
 #include "Voronoi.h"
 
+#include "Ecs.h"
+
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb/stb_image.h"
 
@@ -14,6 +16,9 @@
 
 #include <chrono>
 #include <cstdio>
+#include <vector>
+
+using namespace hs;
 
 void SparseArrayTest()
 {
@@ -178,6 +183,95 @@ void VoronoiTest()
     GenerateVoronoi(jffFile, seeds, seedCount, 1024, 1024, &VoronoiJumpFloodFill);
 }
 
+struct Position
+{
+    int x;
+    int y;
+};
+
+struct Velocity
+{
+    float x;
+    float y;
+};
+
+void EcsTest()
+{
+    using namespace archetypeECS;
+    EcsWorld world;
+
+    constexpr uint ENT_COUNT = 8;
+    Entity_t entities[ENT_COUNT];
+
+    for (int i = 0; i < ENT_COUNT; ++i)
+    {
+        entities[i] = world.CreteEntity();
+    }
+
+    world.DeleteEntity(entities[5]);
+    world.DeleteEntity(entities[0]);
+
+    entities[5] = world.CreteEntity();
+    entities[0] = world.CreteEntity();
+
+    world.DeleteEntity(entities[3]);
+
+    world.DeleteEntity(7);
+    world.DeleteEntity(0);
+
+    uint *ent, entCount;
+    world.GetEntities(ent, entCount);
+
+    for (int i = 0; i < entCount; ++i)
+    {
+        printf("%d\n", ent[i]);
+    }
+
+    int x = 0;
+}
+
+
+// Include here because of clases with flecs macros
+#include "flecs/flecs.h"
+
+void FlecsTest()
+{
+    if (0)
+    {
+        flecs::world world;
+        // Create a new empty entity. Entity names are optional.
+        constexpr uint ENT_COUNT = 16;
+        flecs::entity entities[ENT_COUNT];
+        for (int i = 0; i < ENT_COUNT; ++i)
+        {
+            entities[i] = world.entity();
+            entities[i].set<Position>({i, i});
+        }
+
+        world.system<const Position>()
+            .each([](flecs::entity e, const Position& p)
+        {
+            printf("  %d\n", p.x);
+        });
+
+        printf("First\n");
+        world.progress();
+
+        entities[5].set<Velocity>({5.0f, 5.0f});
+        entities[10].set<Velocity>({10.0f, 10.0f});
+
+        printf("Second\n");
+        world.progress();
+
+        entities[10].remove<Velocity>();
+
+        printf("Third\n");
+        world.progress();
+
+        int x = 0;
+    }
+}
+
 int main()
 {
     //SparseArrayTest();
@@ -185,7 +279,11 @@ int main()
     
     //HeapVsSortedArrayBench();
 
-    VoronoiTest();
+    //VoronoiTest();
+
+    EcsTest();
+
+    FlecsTest();
 
     return 0;
 }

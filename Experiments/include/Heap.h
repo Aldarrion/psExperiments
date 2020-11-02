@@ -5,6 +5,8 @@
 #include <cmath>
 #include <cassert>
 
+using namespace hs;
+
 //------------------------------------------------------------------------------
 void Swap(int& a, int& b)
 {

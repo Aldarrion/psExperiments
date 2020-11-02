@@ -76,6 +76,8 @@ void VoronoiJumpFloodFill(const SeedPoint* seeds, uint seedCount, uint* img, int
     int16 step = (int16)Max(width, height);
     step /= 2;
 
+    int last = 5;
+
     while (step > 0)
     {
         struct
@@ -152,6 +154,11 @@ void VoronoiJumpFloodFill(const SeedPoint* seeds, uint seedCount, uint* img, int
         #endif
 
         step /= 2;
+        if (step < 1 && last)
+        {
+            step = 1;
+            --last;
+        }
     }
 
     for (int y = 0; y < height; ++y)

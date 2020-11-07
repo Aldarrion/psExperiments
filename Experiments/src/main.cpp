@@ -254,9 +254,10 @@ void EcsTest()
 
     for (int i = 0; i < 4; ++i)
     {
-        world.SetComponent(entities[i], Position{ i, i + 1 });
-        world.SetComponent(entities[i], Velocity{ 1.0f / (i + 1), 1 + 1.0f / (i + 1) });
+        world.SetComponents(entities[i], Velocity{ 1.0f / (i + 1), 1 + 1.0f / (i + 1) }, Position{ i, i + 1 });
     }
+
+    world.SetComponents(entities[4], Position{ 100, 200 });
 
     printf("\nPos Vel:\n");
     posVelIt.Each(editPosVel);
@@ -269,6 +270,15 @@ void EcsTest()
     };
 
     velPosIt.Each(printVelPos);
+
+    printf("\nPos:\n");
+    EcsWorld::Iter<const Position> posIt(&world);
+    auto printPos = [](const Position& pos)
+    {
+        printf("Pos: %d, %d\n", pos.x, pos.y);
+    };
+
+    posIt.Each(printPos);
 
     int x = 0;
 }

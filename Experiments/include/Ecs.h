@@ -178,10 +178,10 @@ public:
     }
 
     //------------------------------------------------------------------------------
-    template<class TComponent>
-    bool HasComponent() const
+    template<class... TComponent>
+    bool HasComponents() const
     {
-        return FindComponent<TComponent>() != ID_BAD;
+        return ((FindComponent<TComponent>() != ID_BAD) && ...);
     }
 
     //------------------------------------------------------------------------------
@@ -213,15 +213,18 @@ public:
     }
 
     //------------------------------------------------------------------------------
-    template<class TComponent>
-    void SetComponent(uint rowIdx, const TComponent& value)
+    template<class TComponent, class... TRest>
+    void SetComponents(uint rowIdx, const TComponent& value, const TRest... rest)
     {
-        auto componentId = FindComponent<TComponent>();
-        hs_assert(componentId != ID_BAD);
-        hs_assert(rowIdx < rowCount_);
+        SetComponent(rowIdx, value);
+        SetComponents(rowIdx, rest...);
+    }
 
-        Column_t column = columns_[componentId];
-        static_cast<TComponent*>(column)[rowIdx] = value;
+    //------------------------------------------------------------------------------
+    template<class TComponent>
+    void SetComponents(uint rowIdx, const TComponent& value)
+    {
+        SetComponent(rowIdx, value);
     }
 
     //------------------------------------------------------------------------------
@@ -251,7 +254,7 @@ public:
             return 0;
 
         int colI = 0;
-        for (int i = 0; i < type_.Count(); ++i)
+        for (int i = 0; i < type_.Count() && colI < permutation.Count(); ++i)
         {
             if (canonicalType[colI] == type_[i])
             {
@@ -332,6 +335,18 @@ private:
             memcpy(bPtr, tmp ,size);
         }
     }
+
+    //------------------------------------------------------------------------------
+    template<class TComponent>
+    void SetComponent(uint rowIdx, const TComponent& value)
+    {
+        auto componentId = FindComponent<TComponent>();
+        hs_assert(componentId != ID_BAD);
+        hs_assert(rowIdx < rowCount_);
+
+        Column_t column = columns_[componentId];
+        static_cast<TComponent*>(column)[rowIdx] = value;
+    }
 };
 
 //------------------------------------------------------------------------------
@@ -398,23 +413,23 @@ public:
     }
 
     //------------------------------------------------------------------------------
-    template<class TComponent>
-    void SetComponent(Entity_t entity, const TComponent& component)
+    template<class... TComponent>
+    void SetComponents(Entity_t entity, const TComponent&... components)
     {
         // Find entity
         auto dense = sparse_[entity];
         EntityRecord& record = records_[dense];
         Archetype* originalArch = &archetypes_[record.archetype_];
 
-        if (originalArch->HasComponent<TComponent>())
+        if (originalArch->HasComponents<TComponent...>())
         {
-            originalArch->SetComponent(record.rowIndex_, component);
+            originalArch->SetComponents(record.rowIndex_, components...);
         }
         else
         {
             // TODO get rid of this allocation
             auto type = originalArch->GetType();
-            AddComponentToType<TComponent>(type);
+            AddComponentsToType<TComponent...>(type);
 
             uint archetypeIdx = ID_BAD;
 
@@ -445,13 +460,14 @@ public:
 
             const auto& oldType = originalArch->GetType();
 
+            // TODO skip components in ...components
             for (int i = 0; i < oldType.Count(); ++i)
             {
                 void* oldValue = originalArch->GetElement(record.rowIndex_, i).data_;
                 newArch->SetComponent(newRecord.rowIndex_, oldType[i], oldValue);
             }
 
-            newArch->SetComponent(newRecord.rowIndex_, component);
+            newArch->SetComponents(newRecord.rowIndex_, components...);
 
             originalArch->RemoveRow(record.rowIndex_);
 
@@ -555,6 +571,21 @@ private:
         }
 
         type.Add(typeId);
+    }
+
+    //------------------------------------------------------------------------------
+    template<class TComponent>
+    bool AddComponentsToTypeHelper(Archetype::Type_t& type)
+    {
+        AddComponentToType<TComponent>(type);
+        return true;
+    }
+
+    //------------------------------------------------------------------------------
+    template<class... TComponent>
+    void AddComponentsToType(Archetype::Type_t& type)
+    {
+        (AddComponentsToTypeHelper<TComponent>(type) && ...);
     }
 
     //------------------------------------------------------------------------------

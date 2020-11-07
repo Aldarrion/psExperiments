@@ -4,8 +4,8 @@
 #include "ps_Math.h"
 
 #include <cassert>
-
-#define hs_assert(x) assert(x)
+#include <initializer_list>
+#include <utility>
 
 namespace hs
 {
@@ -15,11 +15,22 @@ class Array
 {
 public:
     //------------------------------------------------------------------------------
-    Array()
-        : capacity_(0)
-        , count_(0)
-        , items_(nullptr)
-    {}
+    static constexpr uint64 IndexBad()
+    {
+        return (uint64)-1;
+    }
+
+    //------------------------------------------------------------------------------
+    Array() = default;
+
+    //------------------------------------------------------------------------------
+    Array(std::initializer_list<T> elements)
+    {
+        for (auto&& e : elements)
+        {
+            Add(std::forward<decltype(e)>(e));
+        }
+    }
 
     //------------------------------------------------------------------------------
     ~Array()
@@ -344,12 +355,38 @@ public:
         return items_;
     }
 
+    //------------------------------------------------------------------------------
+    uint64 IndexOf(const T& item) const
+    {
+        for (int i = 0; i < count_; ++i)
+        {
+            if (items_[i] == item)
+                return i;
+        }
+
+        return IndexBad();
+    }
+
+    //------------------------------------------------------------------------------
+    // Iterators
+    //------------------------------------------------------------------------------
+    T* begin()
+    {
+        return items_;
+    }
+
+    //------------------------------------------------------------------------------
+    T* end()
+    {
+        return items_ + count_;
+    }
+
 private:
     static constexpr uint64 MIN_CAPACITY = 8;
 
-    uint64 capacity_;
-    uint64 count_;
-    T* items_;
+    uint64 capacity_{};
+    uint64 count_{};
+    T* items_{};
 
     //------------------------------------------------------------------------------
     uint64 ArrMax(uint64 a, uint64 b)

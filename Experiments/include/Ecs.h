@@ -2,17 +2,18 @@
 
 #include "Types.h"
 #include "Array.h"
+#include "Span.h"
 
 #include <cstdio>
 #include <tuple>
+#include <algorithm>
 
 using namespace hs;
 
 namespace archetypeECS
 {
 
-#define ECS_COMPONENT \
-    static uint TYPE_ID;
+#define HS_ALLOCA(Type, count) (Type*)_alloca(count * sizeof(Type))
 
 static constexpr uint64 COMPONENT_COUNT = 100;
 static constexpr uint COMPONENT_MASK_SIZE = COMPONENT_COUNT << 6;
@@ -23,22 +24,305 @@ using Component_t = uint16;
 using Entity_t = uint;
 using Column_t = void*;
 
+
+template<class T>
+using RemoveCvRef_t = std::remove_cv_t<std::remove_reference_t<T>>;
+
+template<class T>
+struct TypeInfo;
+
+struct TypeDetails
+{
+    uint alignment_;
+    uint size_;
+};
+
+template<class T>
+void Swap(T& a, T& b)
+{
+    auto tmp = std::move(a);
+    a = std::move(b);
+    b = std::move(tmp);
+}
+
+static constexpr uint ID_BAD{ (uint)-1 };
+
+namespace internal
+{
+
+//------------------------------------------------------------------------------
+template<class TWithoutCvRef>
+struct TypeInfoHelper
+{
+    inline static uint typeId_{ ID_BAD };
+};
+
+}
+
+//------------------------------------------------------------------------------
+struct TypeInfoId
+{
+    template<class T>
+    friend struct TypeInfo;
+
+    //------------------------------------------------------------------------------
+    static const TypeDetails* GetDetails(uint type)
+    {
+        return details_[type];
+    }
+
+private:
+    inline static uint lastTypeId_{ 0 };
+    inline static Array<const TypeDetails*> details_;
+};
+
+//------------------------------------------------------------------------------
+template<class T>
+struct TypeInfo
+{
+    static_assert(std::is_trivial_v<T>);
+    static_assert(std::is_standard_layout_v<T>);
+
+    //------------------------------------------------------------------------------
+    static uint TypeId()
+    {
+        const auto id = internal::TypeInfoHelper<RemoveCvRef_t<T>>::typeId_;
+        hs_assert(id != ID_BAD && "Type is not registered by TypeInfo<T>::InitTypeId()");
+        return id;
+    }
+
+    //------------------------------------------------------------------------------
+    static void InitTypeId()
+    {
+        internal::TypeInfoHelper<RemoveCvRef_t<T>>::typeId_ = TypeInfoId::lastTypeId_++;
+        details_.alignment_ = alignof(T);
+        details_.size_ = sizeof(T);
+        TypeInfoId::details_.Add(&details_);
+
+        hs_assert(TypeInfoId::details_.Count() == TypeInfoId::lastTypeId_);
+    }
+
+    inline static TypeDetails details_;
+};
+
+class EcsWorld;
+
+//------------------------------------------------------------------------------
 class Archetype // Table?
 {
 public:
+    using Type_t = Array<uint>;
 
+    //------------------------------------------------------------------------------
+    Archetype(EcsWorld* world, const Type_t& type)
+        : world_(world)
+    {
+        type_ = type;
+        rowCapacity_ = 8;
+
+        for (int i = 0; i < type_.Count(); ++i)
+        {
+            // TODO alignment
+            const TypeDetails* details = TypeInfoId::GetDetails(type_[i]);
+            Column_t column = malloc(rowCapacity_ * details->size_);
+            columns_.Add(column);
+        }
+    }
+
+    //------------------------------------------------------------------------------
+    ~Archetype()
+    {
+        for (int i = 0; i < type_.Count(); ++i)
+        {
+            free(columns_[i]);
+        }
+    }
+
+
+    //------------------------------------------------------------------------------
+    Archetype(Archetype&& other) = default;
+
+    //------------------------------------------------------------------------------
+    Archetype& operator=(Archetype&& other) = default;
+
+    //------------------------------------------------------------------------------
+    Archetype(const Archetype&) = delete;
+
+    //------------------------------------------------------------------------------
+    Archetype& operator=(const Archetype&) = delete;
+
+    //------------------------------------------------------------------------------
+    template<class TComponent>
+    uint FindComponent()
+    {
+        auto componentType = TypeInfo<TComponent>::TypeId();
+        for (int i = 0; i < type_.Count(); ++i)
+        {
+            if (type_[i] == componentType)
+                return i;
+        }
+
+        return ID_BAD;
+    }
+
+    //------------------------------------------------------------------------------
+    template<class TComponent>
+    bool HasComponent()
+    {
+        return FindComponent<TComponent>() != ID_BAD;
+    }
+
+    //------------------------------------------------------------------------------
+    bool IsType(const Type_t& otherType)
+    {
+        if (type_.Count() != otherType.Count())
+            return false;
+
+        for (int i = 0; i < type_.Count(); ++i)
+        {
+            if (type_[i] != otherType[i])
+                return false;
+        }
+
+        return true;
+    }
+
+    //------------------------------------------------------------------------------
+    template<class TComponent>
+    void SetComponent(uint rowIdx, const TComponent& value)
+    {
+        auto componentId = FindComponent<TComponent>();
+        hs_assert(componentId != ID_BAD);
+        hs_assert(rowIdx < rowCount_);
+
+        Column_t column = columns_[componentId];
+        static_cast<TComponent*>(column)[rowIdx] = value;
+    }
+
+    //------------------------------------------------------------------------------
+    uint AddEntity(Entity_t eid)
+    {
+        EnsureCapacity();
+
+        Element entityElement = GetElement(rowCount_, 0);
+        memcpy(entityElement.data_, &eid, sizeof(eid));
+
+        for (int i = 1; i < columns_.Count(); ++i)
+        {
+            Element e = GetElement(rowCount_, i);
+            memset(e.data_, 0, e.size_);
+        }
+
+        return rowCount_++;
+    }
+
+    //------------------------------------------------------------------------------
+    void RemoveRow(uint row);
+
+    //------------------------------------------------------------------------------
+    int TryGetIterators(const Type_t& canonicalType, Span<const uint> permutation, void** arr)
+    {
+        if (canonicalType.Count() > type_.Count())
+            return 0;
+
+        int colI = 0;
+        for (int i = 0; i < type_.Count(); ++i)
+        {
+            if (canonicalType[i] == type_[i])
+            {
+                auto finalIdx = permutation[colI++];
+                arr[finalIdx] = columns_[i];
+            }
+        }
+
+        if (colI != permutation.Count())
+            return 0;
+
+        return rowCount_;
+    }
 
 private:
-    Array<uint> type_;
+    EcsWorld* world_;
+    Type_t type_;
     Array<Column_t> columns_;
-    uint rowCount_;
+    uint rowCount_{};
     uint rowCapacity_;
+
+    struct Element
+    {
+        void* data_;
+        uint size_;
+    };
+
+    //------------------------------------------------------------------------------
+    Element GetElement(uint row, uint column)
+    {
+        const TypeDetails* details = TypeInfoId::GetDetails(type_[column]);
+        Element element;
+        element.data_ = (byte*)columns_[column] + row * details->size_;
+        element.size_ = details->size_;
+        return element;
+    }
+
+    //------------------------------------------------------------------------------
+    uint GetEntityId(uint row)
+    {
+        auto element = GetElement(row, 0);
+        return *(Entity_t*)element.data_;
+    }
+
+    //------------------------------------------------------------------------------
+    void EnsureCapacity()
+    {
+        if (rowCount_ == rowCapacity_)
+        {
+            rowCapacity_ *= 2;
+            for (int i = 0; i < columns_.Count(); ++i)
+            {
+                // TODO alignment
+                const TypeDetails* details = TypeInfoId::GetDetails(type_[i]);
+                Column_t newColumn = malloc(rowCapacity_ * details->size_);
+                memcpy(newColumn, columns_[i], rowCount_ * details->size_);
+                free(columns_[i]);
+                columns_[i] = newColumn;
+            }
+        }
+    }
+
+    //------------------------------------------------------------------------------
+    void SwapRow(uint a, uint b)
+    {
+        for (int i = 0; i < columns_.Count(); ++i)
+        {
+            const TypeDetails* details = TypeInfoId::GetDetails(type_[i]);
+            auto size = details->size_;
+
+            byte* tmp = HS_ALLOCA(byte, size);
+            byte* aPtr = (byte*)columns_[i] + size * a;
+            byte* bPtr = (byte*)columns_[i] + size * b;
+            
+            memcpy(tmp, aPtr, size);
+            memcpy(aPtr, bPtr, size);
+            memcpy(bPtr, tmp ,size);
+        }
+    }
 };
 
+//------------------------------------------------------------------------------
 // Class that has all the types and entities
 class EcsWorld
 {
+    friend class Archetype;
+
 public:
+    //------------------------------------------------------------------------------
+    EcsWorld()
+    {
+        Archetype emptyArchetype(this, { 0 });
+        archetypes_.Add(std::move(emptyArchetype));
+    }
+
+    //------------------------------------------------------------------------------
     Entity_t CreteEntity()
     {
         Entity_t id{};
@@ -57,11 +341,16 @@ public:
         }
         ++denseUsedCount_;
 
-        // TODO null record
+        EntityRecord record;
+        record.archetype_= 0;
+        record.rowIndex_ = archetypes_[0].AddEntity(id);
+
+        records_.Add(record);
 
         return id;
     }
 
+    //------------------------------------------------------------------------------
     void DeleteEntity(Entity_t entity)
     {
         hs_assert(denseUsedCount_ > 0);
@@ -69,6 +358,9 @@ public:
         auto denseIdx = sparse_[entity];
         auto lastDense = denseUsedCount_ - 1;
         hs_assert(denseIdx <= denseUsedCount_);
+        
+        const auto& record = records_[denseIdx];
+        archetypes_[record.archetype_].RemoveRow(record.rowIndex_);
 
         if (denseIdx < lastDense)
         {
@@ -79,17 +371,105 @@ public:
         --denseUsedCount_;
     }
 
+    //------------------------------------------------------------------------------
     template<class TComponent>
-    void SetComponent(Entity_t entity)
+    void SetComponent(Entity_t entity, const TComponent& component)
     {
         // Find entity
+        auto dense = sparse_[entity];
+        EntityRecord& record = records_[dense];
+        const Archetype& archetype = archetypes_[record.archetype_];
+
+        if (archetype_.HasComponent<TComponent>())
+        {
+            archetype_.SetComponent(record.rowIndex_, component);
+        }
+        else
+        {
+            // TODO get rid of this allocation
+            auto type = archetype.type_;
+            AddComponentToType<TComponent>(type);
+
+            uint archetypeIdx = ID_BAD;
+
+            for (int i = 0; i < archetypes_.Count(); ++i)
+            {
+                if (archetypes_[i].IsType(type))
+                {
+                    archetypeIdx = i;
+                    break;
+                }
+            }
+
+            if (archetypeIdx == ID_BAD)
+            {
+                Archetype newArchetype(type);
+                archetypes_.Add(newArchetype);
+                archetypeIdx = archetypes_.Count() - 1;
+            }
+
+            hs_assert(archetypeIdx != IDX_BAD);
+
+            // Move entity from old archetype to the new one
+            // We can do this column by column for simplicity
+        }
     }
 
+    //------------------------------------------------------------------------------
     void GetEntities(uint*& begin, uint& count)
     {
         begin = dense_.Data();
         count = denseUsedCount_;
     }
+
+    //------------------------------------------------------------------------------
+    template<class... TComponents>
+    struct Iter
+    {
+        explicit Iter(EcsWorld* world) : world_(world) {}
+
+        //------------------------------------------------------------------------------
+        template<class TFun>
+        void Each(TFun fun)
+        {
+            static constexpr int COMP_COUNT = sizeof...(TComponents);
+            auto seq = std::make_index_sequence<COMP_COUNT>();
+
+            Archetype::Type_t type{ TypeInfo<TComponents>::TypeId()... };
+            Archetype::Type_t canonicalType = type;
+            std::sort(canonicalType.begin(), canonicalType.end());
+
+            uint permutation[COMP_COUNT];
+            for (int i = 0; i < COMP_COUNT; ++i)
+            {
+                permutation[i] = type.IndexOf(canonicalType[i]);
+            }
+
+            for (int archI = 0; archI < world_->archetypes_.Count(); ++archI)
+            {
+                void* arr[COMP_COUNT]{};
+                if (int rowCount = world_->archetypes_[archI].TryGetIterators(canonicalType, MakeSpan(permutation), arr);
+                    rowCount)
+                {
+                    for (int rowI = 0; rowI < rowCount; ++rowI)
+                    {
+                        CallHelper(arr, rowI, fun, seq);
+                    }
+                }
+            }
+        }
+
+    private:
+        EcsWorld* world_;
+
+        //------------------------------------------------------------------------------
+        template<class TFun, unsigned long... Seq>
+        void CallHelper(void** arr, int row, TFun fun, std::index_sequence<Seq...>)
+        {
+            fun(((TComponents*)arr[Seq])[row]...);
+        }
+
+    };
 
 private:
     struct EntityRecord
@@ -104,18 +484,58 @@ private:
     Array<Archetype>    archetypes_;
     uint                denseUsedCount_{};
 
-    void SwapEntity(uint e, uint f)
+    //------------------------------------------------------------------------------
+    void SwapEntity(uint denseIdxA, uint denseIdxB)
     {
-        auto tmp = dense_[e];
-        dense_[e] = dense_[f];
-        dense_[f] = tmp;
+        Swap(dense_[denseIdxA], dense_[denseIdxB]);
+        Swap(records_[denseIdxA], records_[denseIdxB]);
+        
+        sparse_[dense_[denseIdxA]] = denseIdxA;
+        sparse_[dense_[denseIdxB]] = denseIdxB;
+    }
 
-        sparse_[dense_[e]] = e;
-        sparse_[dense_[f]] = f;
+    //------------------------------------------------------------------------------
+    template<class TComponent>
+    void AddComponentToType(Archetype::Type_t& type)
+    {
+        auto typeId = TypeInfo<TComponent>::TypeId();
+        // TODO binary search? But we will change the system to bitfields anyway
+        for (int i = 0; i < type.Count(); ++i)
+        {
+            hs_assert(type[i] != typeId && "TypeId already present in type");
+            if (type[i] > typeId)
+            {
+                type.Insert(i, typeId);
+                return;
+            }
+        }
 
-        // TODO swap records
+        type.Add(typeId);
+    }
+
+    //------------------------------------------------------------------------------
+    void UpdateRecord(Entity_t eid, uint rowIdx)
+    {
+        auto denseIdx = sparse_[eid];
+        records_[denseIdx].rowIndex_ = rowIdx;
     }
 };
+
+//------------------------------------------------------------------------------
+void Archetype::RemoveRow(uint row)
+{
+    hs_assert(row < rowCount_);
+
+    const uint lastRowIdx = rowCount_ - 1;
+    if (row < lastRowIdx)
+    {
+        auto eid = GetEntityId(lastRowIdx);
+        world_->UpdateRecord(eid, row);
+        SwapRow(row, lastRowIdx);
+    }
+
+    --rowCount_;
+}
 
 
 class Entity // ? or just have the number and pass the world to all the functions?

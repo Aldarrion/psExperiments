@@ -198,6 +198,9 @@ struct Velocity
 void EcsTest()
 {
     using namespace archetypeECS;
+
+    TypeInfo<Entity_t>::InitTypeId();
+
     EcsWorld world;
 
     constexpr uint ENT_COUNT = 8;
@@ -226,6 +229,17 @@ void EcsTest()
     {
         printf("%d\n", ent[i]);
     }
+
+    TypeInfo<Position>::InitTypeId();
+    TypeInfo<Velocity>::InitTypeId();
+
+    printf("\n\n");
+
+    EcsWorld::Iter<Entity_t> it(&world);
+    it.Each([](Entity_t eid)
+    {
+        printf("%d\n", eid);
+    });
 
     int x = 0;
 }
@@ -276,7 +290,7 @@ int main()
 {
     //SparseArrayTest();
     //ArrayTest();
-    
+
     //HeapVsSortedArrayBench();
 
     //VoronoiTest();

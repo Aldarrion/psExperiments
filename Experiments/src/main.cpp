@@ -204,23 +204,24 @@ void EcsTest()
     EcsWorld world;
 
     constexpr uint ENT_COUNT = 8;
-    Entity_t entities[ENT_COUNT];
+    Array<Entity_t> entities;
 
     for (int i = 0; i < ENT_COUNT; ++i)
     {
-        entities[i] = world.CreteEntity();
+        entities.Add(world.CreteEntity());
     }
 
     world.DeleteEntity(entities[5]);
-    world.DeleteEntity(entities[0]);
+    entities.Remove(5);
 
-    entities[5] = world.CreteEntity();
-    entities[0] = world.CreteEntity();
+    world.DeleteEntity(entities[0]);
+    entities.Remove(0);
+
+    entities.Add(world.CreteEntity());
+    entities.Add(world.CreteEntity());
 
     world.DeleteEntity(entities[3]);
-
-    world.DeleteEntity(7);
-    world.DeleteEntity(0);
+    entities.Remove(3);
 
     uint *ent, entCount;
     world.GetEntities(ent, entCount);
@@ -233,13 +234,41 @@ void EcsTest()
     TypeInfo<Position>::InitTypeId();
     TypeInfo<Velocity>::InitTypeId();
 
-    printf("\n\n");
+    printf("\nEntities:\n");
 
     EcsWorld::Iter<Entity_t> it(&world);
     it.Each([](Entity_t eid)
     {
         printf("%d\n", eid);
     });
+
+    EcsWorld::Iter<Position, const Velocity> posVelIt(&world);
+    auto editPosVel = [](Position& pos, const Velocity& vel)
+    {
+        printf("Pos: %d, %d, Vel: %f, %f\n", pos.x, pos.y, vel.x, vel.y);
+        pos.x += 10;
+    };
+
+    printf("\nPos Vel:\n");
+    posVelIt.Each(editPosVel);
+
+    for (int i = 0; i < 4; ++i)
+    {
+        world.SetComponent(entities[i], Position{ i, i + 1 });
+        world.SetComponent(entities[i], Velocity{ 1.0f / (i + 1), 1 + 1.0f / (i + 1) });
+    }
+
+    printf("\nPos Vel:\n");
+    posVelIt.Each(editPosVel);
+
+    printf("\nVel Pos:\n");
+    EcsWorld::Iter<const Velocity, const Position> velPosIt(&world);
+    auto printVelPos = [](const Velocity& vel, const Position& pos)
+    {
+        printf("Pos: %d, %d, Vel: %f, %f\n", pos.x, pos.y, vel.x, vel.y);
+    };
+
+    velPosIt.Each(printVelPos);
 
     int x = 0;
 }

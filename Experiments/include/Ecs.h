@@ -152,13 +152,17 @@ public:
     Archetype& operator=(const Archetype&) = delete;
 
     //------------------------------------------------------------------------------
-    template<class TComponent>
-    uint FindComponent()
+    const Type_t& GetType() const
     {
-        auto componentType = TypeInfo<TComponent>::TypeId();
+        return type_;
+    }
+
+    //------------------------------------------------------------------------------
+    uint FindComponent(uint componentTypeId) const
+    {
         for (int i = 0; i < type_.Count(); ++i)
         {
-            if (type_[i] == componentType)
+            if (type_[i] == componentTypeId)
                 return i;
         }
 
@@ -167,13 +171,21 @@ public:
 
     //------------------------------------------------------------------------------
     template<class TComponent>
-    bool HasComponent()
+    uint FindComponent() const
+    {
+        auto componentTypeId = TypeInfo<TComponent>::TypeId();
+        return FindComponent(componentTypeId);
+    }
+
+    //------------------------------------------------------------------------------
+    template<class TComponent>
+    bool HasComponent() const
     {
         return FindComponent<TComponent>() != ID_BAD;
     }
 
     //------------------------------------------------------------------------------
-    bool IsType(const Type_t& otherType)
+    bool IsType(const Type_t& otherType) const
     {
         if (type_.Count() != otherType.Count())
             return false;
@@ -185,6 +197,19 @@ public:
         }
 
         return true;
+    }
+
+    //------------------------------------------------------------------------------
+    void SetComponent(uint rowIdx, uint componentTypeId, void* value)
+    {
+        hs_assert(componentTypeId != ID_BAD);
+
+        auto size = TypeInfoId::GetDetails(componentTypeId)->size_;
+
+        auto componentIdx = FindComponent(componentTypeId);
+
+        Column_t column = columns_[componentIdx];
+        memcpy((byte*)column + rowIdx * size, value, size);
     }
 
     //------------------------------------------------------------------------------
@@ -220,7 +245,7 @@ public:
     void RemoveRow(uint row);
 
     //------------------------------------------------------------------------------
-    int TryGetIterators(const Type_t& canonicalType, Span<const uint> permutation, void** arr)
+    int TryGetIterators(const Type_t& canonicalType, Span<const uint> permutation, void** arr) const
     {
         if (canonicalType.Count() > type_.Count())
             return 0;
@@ -228,7 +253,7 @@ public:
         int colI = 0;
         for (int i = 0; i < type_.Count(); ++i)
         {
-            if (canonicalType[i] == type_[i])
+            if (canonicalType[colI] == type_[i])
             {
                 auto finalIdx = permutation[colI++];
                 arr[finalIdx] = columns_[i];
@@ -241,13 +266,7 @@ public:
         return rowCount_;
     }
 
-private:
-    EcsWorld* world_;
-    Type_t type_;
-    Array<Column_t> columns_;
-    uint rowCount_{};
-    uint rowCapacity_;
-
+    //------------------------------------------------------------------------------
     struct Element
     {
         void* data_;
@@ -263,6 +282,13 @@ private:
         element.size_ = details->size_;
         return element;
     }
+
+private:
+    EcsWorld* world_;
+    Type_t type_;
+    Array<Column_t> columns_;
+    uint rowCount_{};
+    uint rowCapacity_;
 
     //------------------------------------------------------------------------------
     uint GetEntityId(uint row)
@@ -300,7 +326,7 @@ private:
             byte* tmp = HS_ALLOCA(byte, size);
             byte* aPtr = (byte*)columns_[i] + size * a;
             byte* bPtr = (byte*)columns_[i] + size * b;
-            
+
             memcpy(tmp, aPtr, size);
             memcpy(aPtr, bPtr, size);
             memcpy(bPtr, tmp ,size);
@@ -358,7 +384,7 @@ public:
         auto denseIdx = sparse_[entity];
         auto lastDense = denseUsedCount_ - 1;
         hs_assert(denseIdx <= denseUsedCount_);
-        
+
         const auto& record = records_[denseIdx];
         archetypes_[record.archetype_].RemoveRow(record.rowIndex_);
 
@@ -378,16 +404,16 @@ public:
         // Find entity
         auto dense = sparse_[entity];
         EntityRecord& record = records_[dense];
-        const Archetype& archetype = archetypes_[record.archetype_];
+        Archetype* originalArch = &archetypes_[record.archetype_];
 
-        if (archetype_.HasComponent<TComponent>())
+        if (originalArch->HasComponent<TComponent>())
         {
-            archetype_.SetComponent(record.rowIndex_, component);
+            originalArch->SetComponent(record.rowIndex_, component);
         }
         else
         {
             // TODO get rid of this allocation
-            auto type = archetype.type_;
+            auto type = originalArch->GetType();
             AddComponentToType<TComponent>(type);
 
             uint archetypeIdx = ID_BAD;
@@ -403,15 +429,33 @@ public:
 
             if (archetypeIdx == ID_BAD)
             {
-                Archetype newArchetype(type);
-                archetypes_.Add(newArchetype);
+                Archetype newArchetype(this, type);
+                archetypes_.Add(std::move(newArchetype));
                 archetypeIdx = archetypes_.Count() - 1;
             }
 
-            hs_assert(archetypeIdx != IDX_BAD);
+            hs_assert(archetypeIdx != ID_BAD);
 
-            // Move entity from old archetype to the new one
-            // We can do this column by column for simplicity
+            // Copy components one by one from old to the new originalArch
+            Archetype* newArch = &archetypes_[archetypeIdx];
+
+            EntityRecord newRecord;
+            newRecord.archetype_ = archetypeIdx;
+            newRecord.rowIndex_ = newArch->AddEntity(entity);
+
+            const auto& oldType = originalArch->GetType();
+
+            for (int i = 0; i < oldType.Count(); ++i)
+            {
+                void* oldValue = originalArch->GetElement(record.rowIndex_, i).data_;
+                newArch->SetComponent(newRecord.rowIndex_, oldType[i], oldValue);
+            }
+
+            newArch->SetComponent(newRecord.rowIndex_, component);
+
+            originalArch->RemoveRow(record.rowIndex_);
+
+            record = newRecord;
         }
     }
 
@@ -489,7 +533,7 @@ private:
     {
         Swap(dense_[denseIdxA], dense_[denseIdxB]);
         Swap(records_[denseIdxA], records_[denseIdxB]);
-        
+
         sparse_[dense_[denseIdxA]] = denseIdxA;
         sparse_[dense_[denseIdxB]] = denseIdxB;
     }
